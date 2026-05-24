@@ -5,12 +5,12 @@ import 'package:flutter/material.dart';
 import 'package:flutter_foreground_task/flutter_foreground_task.dart';
 
 void main() {
-  // Initialize port for communication between TaskHandler and UI.
   FlutterForegroundTask.initCommunicationPort();
   runApp(const ExampleApp());
 }
 
-// The callback function should always be a top-level or static function.
+// ==================== Foreground Service Callback ====================
+
 @pragma('vm:entry-point')
 void startCallback() {
   FlutterForegroundTask.setTaskHandler(MyTaskHandler());
@@ -24,36 +24,30 @@ class MyTaskHandler extends TaskHandler {
   void _incrementCount() {
     _count++;
 
-    // Update notification content.
     FlutterForegroundTask.updateService(
       notificationTitle: 'Hello MyTaskHandler :)',
       notificationText: 'count: $_count',
     );
 
-    // Send data to main isolate.
     FlutterForegroundTask.sendDataToMain(_count);
   }
 
-  // Called when the task is started.
   @override
   Future<void> onStart(DateTime timestamp, TaskStarter starter) async {
     print('onStart(starter: ${starter.name})');
     _incrementCount();
   }
 
-  // Called based on the eventAction set in ForegroundTaskOptions.
   @override
   void onRepeatEvent(DateTime timestamp) {
     _incrementCount();
   }
 
-  // Called when the task is destroyed.
   @override
   Future<void> onDestroy(DateTime timestamp, bool isTimeout) async {
     print('onDestroy(isTimeout: $isTimeout)');
   }
 
-  // Called when data is sent using `FlutterForegroundTask.sendDataToTask`.
   @override
   void onReceiveData(Object data) {
     print('onReceiveData: $data');
@@ -62,24 +56,85 @@ class MyTaskHandler extends TaskHandler {
     }
   }
 
-  // Called when the notification button is pressed.
   @override
   void onNotificationButtonPressed(String id) {
     print('onNotificationButtonPressed: $id');
   }
 
-  // Called when the notification itself is pressed.
   @override
   void onNotificationPressed() {
     print('onNotificationPressed');
   }
 
-  // Called when the notification itself is dismissed.
   @override
   void onNotificationDismissed() {
     print('onNotificationDismissed');
   }
 }
+
+// ==================== Continued Processing Task Callback ====================
+
+@pragma('vm:entry-point')
+void continuedProcessingCallback() {
+  FlutterForegroundTask.setTaskHandler(ContinuedProcessingHandler());
+}
+
+class ContinuedProcessingHandler extends TaskHandler {
+  int _eventCount = 0;
+
+  @override
+  Future<void> onStart(DateTime timestamp, TaskStarter starter) async {
+    _eventCount = 0;
+    print('[CP] onStart(starter: ${starter.name})');
+    FlutterForegroundTask.sendDataToMain({
+      'type': 'onStart',
+      'starter': starter.name,
+      'timestamp': timestamp.toIso8601String(),
+    });
+  }
+
+  @override
+  void onRepeatEvent(DateTime timestamp) {
+    _eventCount++;
+    print('[CP] onRepeatEvent #$_eventCount');
+    FlutterForegroundTask.sendDataToMain({
+      'type': 'onRepeatEvent',
+      'count': _eventCount,
+      'timestamp': timestamp.toIso8601String(),
+    });
+  }
+
+  @override
+  Future<void> onDestroy(DateTime timestamp, bool isTimeout) async {
+    print('[CP] onDestroy(isTimeout: $isTimeout, eventCount: $_eventCount)');
+    FlutterForegroundTask.sendDataToMain({
+      'type': 'onDestroy',
+      'isTimeout': isTimeout,
+      'eventCount': _eventCount,
+      'timestamp': timestamp.toIso8601String(),
+    });
+  }
+
+  @override
+  void onReceiveData(Object data) {
+    print('[CP] onReceiveData: $data');
+    FlutterForegroundTask.sendDataToMain({
+      'type': 'onReceiveData',
+      'data': data,
+    });
+  }
+
+  @override
+  void onNotificationButtonPressed(String id) {}
+
+  @override
+  void onNotificationPressed() {}
+
+  @override
+  void onNotificationDismissed() {}
+}
+
+// ============================== App UI ==============================
 
 class ExampleApp extends StatelessWidget {
   const ExampleApp({super.key});
@@ -105,11 +160,11 @@ class ExamplePage extends StatefulWidget {
 
 class _ExamplePageState extends State<ExamplePage> {
   final ValueNotifier<Object?> _taskDataListenable = ValueNotifier(null);
+  final ValueNotifier<Object?> _cpDataListenable = ValueNotifier(null);
+
+  // ===================== Permissions & Init =====================
 
   Future<void> _requestPermissions() async {
-    // Android 13+, you need to allow notification permission to display foreground service notification.
-    //
-    // iOS: If you need notification, ask for permission.
     final NotificationPermission notificationPermission =
         await FlutterForegroundTask.checkNotificationPermission();
     if (notificationPermission != NotificationPermission.granted) {
@@ -117,22 +172,11 @@ class _ExamplePageState extends State<ExamplePage> {
     }
 
     if (Platform.isAndroid) {
-      // Android 12+, there are restrictions on starting a foreground service.
-      //
-      // To restart the service on device reboot or unexpected problem, you need to allow below permission.
       if (!await FlutterForegroundTask.isIgnoringBatteryOptimizations) {
-        // This function requires `android.permission.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS` permission.
         await FlutterForegroundTask.requestIgnoreBatteryOptimization();
       }
 
-      // Use this utility only if you provide services that require long-term survival,
-      // such as exact alarm service, healthcare service, or Bluetooth communication.
-      //
-      // This utility requires the "android.permission.SCHEDULE_EXACT_ALARM" permission.
-      // Using this permission may make app distribution difficult due to Google policy.
       if (!await FlutterForegroundTask.canScheduleExactAlarms) {
-        // When you call this function, will be gone to the settings page.
-        // So you need to explain to the user why set it.
         await FlutterForegroundTask.openAlarmsAndRemindersSettings();
       }
     }
@@ -161,17 +205,13 @@ class _ExamplePageState extends State<ExamplePage> {
     );
   }
 
+  // =================== Foreground Service ===================
+
   Future<ServiceRequestResult> _startService() async {
     if (await FlutterForegroundTask.isRunningService) {
       return FlutterForegroundTask.restartService();
     } else {
       return FlutterForegroundTask.startService(
-        // You can manually specify the foregroundServiceType for the service
-        // to be started, as shown in the comment below.
-        // serviceTypes: [
-        //   ForegroundServiceTypes.dataSync,
-        //   ForegroundServiceTypes.remoteMessaging,
-        // ],
         serviceId: 256,
         notificationTitle: 'Foreground Service is running',
         notificationText: 'Tap to return to the app',
@@ -189,23 +229,73 @@ class _ExamplePageState extends State<ExamplePage> {
     return FlutterForegroundTask.stopService();
   }
 
-  void _onReceiveTaskData(Object data) {
-    print('onReceiveTaskData: $data');
-    _taskDataListenable.value = data;
-  }
-
   void _incrementCount() {
     FlutterForegroundTask.sendDataToTask(MyTaskHandler.incrementCountCommand);
   }
 
+  // ============== Continued Processing Task ==============
+
+  Future<void> _startContinuedProcessingTask() async {
+    if (!await FlutterForegroundTask.isContinuedProcessingTaskSupported) {
+      _cpDataListenable.value = {
+        'type': 'error',
+        'message': 'BGContinuedProcessingTask not supported on this device',
+      };
+      return;
+    }
+
+    await FlutterForegroundTask.startContinuedProcessingTask(
+      options: const ContinuedProcessingTaskOptions(
+        title: 'Processing Data',
+        subtitle: 'Task is running...',
+        requiresGPU: false,
+        submissionStrategy: ContinuedProcessingSubmissionStrategy.queue,
+      ),
+      foregroundTaskOptions: ForegroundTaskOptions(
+        eventAction: ForegroundTaskEventAction.repeat(5000),
+      ),
+      callback: continuedProcessingCallback,
+    );
+
+    _cpDataListenable.value = {
+      'type': 'submitted',
+      'message':
+          'Task submitted to system scheduler. It will run when the system decides.',
+    };
+  }
+
+  Future<void> _stopContinuedProcessingTask() async {
+    if (!await FlutterForegroundTask.isRunningContinuedProcessingTask) {
+      _cpDataListenable.value = {
+        'type': 'error',
+        'message': 'No continued processing task is running',
+      };
+      return;
+    }
+
+    await FlutterForegroundTask.stopContinuedProcessingTask();
+    _cpDataListenable.value = {
+      'type': 'stopped',
+      'message': 'Continued processing task stopped',
+    };
+  }
+
+  // ==================== Data Callbacks ====================
+
+  void _onReceiveTaskData(Object data) {
+    print('onReceiveTaskData: $data');
+    _taskDataListenable.value = data;
+    _cpDataListenable.value = data;
+  }
+
+  // ===================== Lifecycle =====================
+
   @override
   void initState() {
     super.initState();
-    // Add a callback to receive data sent from the TaskHandler.
     FlutterForegroundTask.addTaskDataCallback(_onReceiveTaskData);
 
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      // Request permissions and initialize the service.
       _requestPermissions();
       _initService();
     });
@@ -213,19 +303,16 @@ class _ExamplePageState extends State<ExamplePage> {
 
   @override
   void dispose() {
-    // Remove a callback to receive data sent from the TaskHandler.
     FlutterForegroundTask.removeTaskDataCallback(_onReceiveTaskData);
     _taskDataListenable.dispose();
+    _cpDataListenable.dispose();
     super.dispose();
   }
 
+  // ===================== UI Build =====================
+
   @override
   Widget build(BuildContext context) {
-    // ** optional **
-    // A widget that minimize the app without closing it when the user presses
-    // the soft back button. It only works when the service is running.
-    //
-    // This widget must be declared above the [Scaffold] widget.
     return WithForegroundTask(
       child: Scaffold(
         appBar: AppBar(
@@ -233,53 +320,189 @@ class _ExamplePageState extends State<ExamplePage> {
           centerTitle: true,
         ),
         body: SafeArea(
-          child: Column(
-            children: [
-              Expanded(child: _buildCommunicationDataText()),
-              _buildServiceControlButtons(),
-            ],
+          child: SingleChildScrollView(
+            child: Column(
+              children: [
+                _buildForegroundServiceSection(),
+                const Divider(height: 1, thickness: 1),
+                _buildContinuedProcessingSection(),
+              ],
+            ),
           ),
         ),
       ),
     );
   }
 
-  Widget _buildCommunicationDataText() {
-    return ValueListenableBuilder(
-      valueListenable: _taskDataListenable,
-      builder: (context, data, _) {
-        return Center(
-          child: Column(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: <Widget>[
-              const Text('You received data from TaskHandler:'),
-              Text('$data', style: Theme.of(context).textTheme.headlineMedium),
+  // ============ Foreground Service Section ============
+
+  Widget _buildForegroundServiceSection() {
+    return Padding(
+      padding: const EdgeInsets.all(12),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Text('Foreground Service',
+              style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
+          const SizedBox(height: 4),
+          ValueListenableBuilder(
+            valueListenable: _taskDataListenable,
+            builder: (context, data, _) {
+              return Container(
+                width: double.infinity,
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  color: Colors.grey.shade100,
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Text('Task Data:', style: TextStyle(fontSize: 14)),
+                    const SizedBox(height: 4),
+                    Text('$data',
+                        style: Theme.of(context).textTheme.headlineSmall),
+                  ],
+                ),
+              );
+            },
+          ),
+          const SizedBox(height: 8),
+          Row(
+            children: [
+              Expanded(
+                child: ElevatedButton(
+                    onPressed: _startService,
+                    child: const Text('start service')),
+              ),
+              const SizedBox(width: 8),
+              Expanded(
+                child: ElevatedButton(
+                    onPressed: _stopService, child: const Text('stop service')),
+              ),
+              const SizedBox(width: 8),
+              Expanded(
+                child: ElevatedButton(
+                    onPressed: _incrementCount,
+                    child: const Text('increment count')),
+              ),
             ],
           ),
-        );
-      },
-    );
-  }
-
-  Widget _buildServiceControlButtons() {
-    buttonBuilder(String text, {VoidCallback? onPressed}) {
-      return ElevatedButton(
-        onPressed: onPressed,
-        child: Text(text),
-      );
-    }
-
-    return Padding(
-      padding: const EdgeInsets.all(8.0),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          buttonBuilder('start service', onPressed: _startService),
-          buttonBuilder('stop service', onPressed: _stopService),
-          buttonBuilder('increment count', onPressed: _incrementCount),
         ],
       ),
     );
+  }
+
+  // ============ Continued Processing Section ============
+
+  Widget _buildContinuedProcessingSection() {
+    return Padding(
+      padding: const EdgeInsets.all(12),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Text('BGContinuedProcessingTask (iOS 26+)',
+              style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
+          const SizedBox(height: 8),
+          _buildStatusRow(
+            'isContinuedProcessingTaskSupported',
+            'isContinuedProcessingTaskSupported',
+          ),
+          _buildStatusRow(
+            'isGPUResourceSupported',
+            'isGPUResourceSupported',
+          ),
+          _buildStatusRow(
+            'isRunningContinuedProcessingTask',
+            'isRunningContinuedProcessingTask',
+          ),
+          const SizedBox(height: 8),
+          ValueListenableBuilder(
+            valueListenable: _cpDataListenable,
+            builder: (context, data, _) {
+              return Container(
+                width: double.infinity,
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  color: Colors.grey.shade100,
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Text('Events:', style: TextStyle(fontSize: 14)),
+                    const SizedBox(height: 4),
+                    Text('$data', style: const TextStyle(fontSize: 12)),
+                  ],
+                ),
+              );
+            },
+          ),
+          const SizedBox(height: 8),
+          Row(
+            children: [
+              Expanded(
+                child: ElevatedButton(
+                  onPressed: _startContinuedProcessingTask,
+                  child: const Text('start CP Task'),
+                ),
+              ),
+              const SizedBox(width: 8),
+              Expanded(
+                child: ElevatedButton(
+                  onPressed: _stopContinuedProcessingTask,
+                  child: const Text('stop CP Task'),
+                ),
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildStatusRow(String label, String getter) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 2),
+      child: FutureBuilder<bool>(
+        future: _resolveStatus(getter),
+        builder: (context, snapshot) {
+          final value = snapshot.data;
+          return Row(
+            children: [
+              Expanded(
+                  child:
+                      Text('$label: ', style: const TextStyle(fontSize: 13))),
+              Text(
+                value == null
+                    ? '...'
+                    : value
+                        ? 'true'
+                        : 'false',
+                style: TextStyle(
+                  fontSize: 13,
+                  fontWeight: FontWeight.w600,
+                  color: value == true ? Colors.green : Colors.red.shade300,
+                ),
+              ),
+            ],
+          );
+        },
+      ),
+    );
+  }
+
+  Future<bool> _resolveStatus(String getter) async {
+    switch (getter) {
+      case 'isContinuedProcessingTaskSupported':
+        return FlutterForegroundTask.isContinuedProcessingTaskSupported;
+      case 'isGPUResourceSupported':
+        return FlutterForegroundTask.isGPUResourceSupported;
+      case 'isRunningContinuedProcessingTask':
+        return FlutterForegroundTask.isRunningContinuedProcessingTask;
+      default:
+        return false;
+    }
   }
 }
 

@@ -1,6 +1,7 @@
 import 'package:plugin_platform_interface/plugin_platform_interface.dart';
 
 import 'flutter_foreground_task_method_channel.dart';
+import 'models/continued_processing_task_options.dart';
 import 'models/foreground_service_types.dart';
 import 'models/foreground_task_options.dart';
 import 'models/notification_button.dart';
@@ -152,5 +153,63 @@ abstract class FlutterForegroundTaskPlatform extends PlatformInterface {
   Future<bool> openAlarmsAndRemindersSettings() {
     throw UnimplementedError(
         'openAlarmsAndRemindersSettings() has not been implemented.');
+  }
+
+  // ============ BGContinuedProcessingTask (iOS 26+) ============
+
+  Future<bool> get isContinuedProcessingTaskSupported {
+    throw UnimplementedError(
+        'isContinuedProcessingTaskSupported has not been implemented.');
+  }
+
+  Future<void> startContinuedProcessingTask({
+    required ContinuedProcessingTaskOptions options,
+    required ForegroundTaskOptions foregroundTaskOptions,
+    Function? callback,
+  }) {
+    throw UnimplementedError(
+        'startContinuedProcessingTask() has not been implemented.');
+  }
+
+  Future<void> stopContinuedProcessingTask() {
+    throw UnimplementedError(
+        'stopContinuedProcessingTask() has not been implemented.');
+  }
+
+  Future<bool> get isRunningContinuedProcessingTask {
+    throw UnimplementedError(
+        'isRunningContinuedProcessingTask has not been implemented.');
+  }
+
+  /// Returns whether the device's BGTaskScheduler supports GPU resources
+  /// for continued processing tasks.
+  ///
+  /// On iOS 26+ devices that support background GPU access, this returns true.
+  /// Requires the `com.apple.developer.background-tasks.continued-processing.gpu`
+  /// entitlement.
+  Future<bool> get isGPUResourceSupported {
+    throw UnimplementedError(
+        'isGPUResourceSupported has not been implemented.');
+  }
+
+  void updateContinuedProcessingTaskProgress({
+    required int completed,
+    required int total,
+  }) {
+    throw UnimplementedError(
+        'updateContinuedProcessingTaskProgress() has not been implemented.');
+  }
+
+  void updateContinuedProcessingTaskTitle({
+    required String title,
+    required String subtitle,
+  }) {
+    throw UnimplementedError(
+        'updateContinuedProcessingTaskTitle() has not been implemented.');
+  }
+
+  void completeContinuedProcessingTask({bool success = true}) {
+    throw UnimplementedError(
+        'completeContinuedProcessingTask() has not been implemented.');
   }
 }

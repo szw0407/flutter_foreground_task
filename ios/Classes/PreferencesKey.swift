@@ -24,3 +24,11 @@ let IS_ONCE_EVENT = "isOnceEvent" // deprecated
 
 // task data
 let CALLBACK_HANDLE = "callbackHandle"
+
+// continued processing task options (iOS 26+)
+let CONTINUED_PROCESSING_ENABLED = "continuedProcessingEnabled"
+let CONTINUED_PROCESSING_TITLE = "continuedProcessingTitle"
+let CONTINUED_PROCESSING_SUBTITLE = "continuedProcessingSubtitle"
+let CONTINUED_PROCESSING_REQUIRES_GPU = "continuedProcessingRequiresGPU"
+let CONTINUED_PROCESSING_STRATEGY = "continuedProcessingStrategy"
+let CONTINUED_PROCESSING_ARGS = "continuedProcessingArgs"

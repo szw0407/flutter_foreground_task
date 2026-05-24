@@ -8,6 +8,7 @@ import 'package:flutter/widgets.dart';
 import 'package:platform/platform.dart';
 
 import 'flutter_foreground_task_platform_interface.dart';
+import 'models/continued_processing_task_options.dart';
 import 'models/foreground_service_types.dart';
 import 'models/foreground_task_options.dart';
 import 'models/notification_button.dart';
@@ -272,5 +273,97 @@ class MethodChannelFlutterForegroundTask extends FlutterForegroundTaskPlatform {
       return await mMDChannel.invokeMethod('openAlarmsAndRemindersSettings');
     }
     return true;
+  }
+
+  // ============ BGContinuedProcessingTask (iOS 26+) ============
+
+  @override
+  Future<bool> get isContinuedProcessingTaskSupported async {
+    if (platform.isIOS) {
+      return await mMDChannel
+          .invokeMethod('isContinuedProcessingTaskSupported');
+    }
+    return false;
+  }
+
+  @override
+  Future<void> startContinuedProcessingTask({
+    required ContinuedProcessingTaskOptions options,
+    required ForegroundTaskOptions foregroundTaskOptions,
+    Function? callback,
+  }) async {
+    if (!platform.isIOS) {
+      return;
+    }
+
+    final Map<String, dynamic> optionsJson = {
+      ...options.toJson(),
+      ...foregroundTaskOptions.toJson(),
+    };
+
+    if (callback != null) {
+      final callbackHandle = PluginUtilities.getCallbackHandle(callback);
+      if (callbackHandle != null) {
+        optionsJson['callbackHandle'] = callbackHandle.toRawHandle();
+      }
+    }
+
+    await mMDChannel.invokeMethod('startContinuedProcessingTask', optionsJson);
+  }
+
+  @override
+  Future<void> stopContinuedProcessingTask() async {
+    if (platform.isIOS) {
+      await mMDChannel.invokeMethod('stopContinuedProcessingTask');
+    }
+  }
+
+  @override
+  Future<bool> get isRunningContinuedProcessingTask async {
+    if (platform.isIOS) {
+      return await mMDChannel.invokeMethod('isRunningContinuedProcessingTask');
+    }
+    return false;
+  }
+
+  @override
+  Future<bool> get isGPUResourceSupported async {
+    if (platform.isIOS) {
+      return await mMDChannel.invokeMethod('isGPUResourceSupported');
+    }
+    return false;
+  }
+
+  @override
+  void updateContinuedProcessingTaskProgress({
+    required int completed,
+    required int total,
+  }) {
+    if (platform.isIOS) {
+      mBGChannel.invokeMethod('updateProgress', {
+        'completed': completed,
+        'total': total,
+      });
+    }
+  }
+
+  @override
+  void updateContinuedProcessingTaskTitle({
+    required String title,
+    required String subtitle,
+  }) {
+    if (platform.isIOS) {
+      mBGChannel.invokeMethod('updateTitle', {
+        'title': title,
+        'subtitle': subtitle,
+      });
+    }
+  }
+
+  @override
+  void completeContinuedProcessingTask({bool success = true}) {
+    if (platform.isIOS) {
+      mBGChannel.invokeMethod('complete', success);
+    }
   }
 }

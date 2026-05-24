@@ -10,6 +10,7 @@ import 'errors/service_already_started_exception.dart';
 import 'errors/service_not_initialized_exception.dart';
 import 'errors/service_not_started_exception.dart';
 import 'errors/service_timeout_exception.dart';
+import 'models/continued_processing_task_options.dart';
 import 'models/foreground_service_types.dart';
 import 'models/foreground_task_options.dart';
 import 'models/notification_button.dart';
@@ -24,6 +25,7 @@ export 'errors/service_already_started_exception.dart';
 export 'errors/service_not_initialized_exception.dart';
 export 'errors/service_not_started_exception.dart';
 export 'errors/service_timeout_exception.dart';
+export 'models/continued_processing_task_options.dart';
 export 'models/foreground_service_types.dart';
 export 'models/foreground_task_event_action.dart';
 export 'models/foreground_task_options.dart';
@@ -421,4 +423,108 @@ class FlutterForegroundTask {
   /// Using this permission may make app distribution difficult due to Google policy.
   static Future<bool> openAlarmsAndRemindersSettings() =>
       _platform.openAlarmsAndRemindersSettings();
+
+  // ============ BGContinuedProcessingTask (iOS 26+) ============
+
+  /// Returns whether the BGContinuedProcessingTask is supported on this device.
+  ///
+  /// BGContinuedProcessingTask is only available on iOS 26.0+.
+  static Future<bool> get isContinuedProcessingTaskSupported =>
+      _platform.isContinuedProcessingTaskSupported;
+
+  /// Start a continued processing task (iOS 26+).
+  ///
+  /// This allows long-running user-initiated tasks to continue in the background.
+  /// The task runs via `BGContinuedProcessingTask` and supports progress reporting.
+  ///
+  /// [options] specifies the display title, subtitle, GPU requirements, and
+  /// submission strategy.
+  /// [foregroundTaskOptions] specifies the task event action for repeat events.
+  /// [callback] is the top-level Dart function that will be invoked in the
+  /// background isolate. This function should call [setTaskHandler] to set up
+  /// the task handler.
+  static Future<ServiceRequestResult> startContinuedProcessingTask({
+    required ContinuedProcessingTaskOptions options,
+    required ForegroundTaskOptions foregroundTaskOptions,
+    Function? callback,
+  }) async {
+    try {
+      if (await isRunningContinuedProcessingTask) {
+        throw ServiceAlreadyStartedException();
+      }
+
+      await _platform.startContinuedProcessingTask(
+        options: options,
+        foregroundTaskOptions: foregroundTaskOptions,
+        callback: callback,
+      );
+
+      return const ServiceRequestSuccess();
+    } catch (error) {
+      return ServiceRequestFailure(error: error);
+    }
+  }
+
+  /// Stop the currently running continued processing task.
+  static Future<ServiceRequestResult> stopContinuedProcessingTask() async {
+    try {
+      if (!(await isRunningContinuedProcessingTask)) {
+        throw ServiceNotStartedException();
+      }
+
+      await _platform.stopContinuedProcessingTask();
+
+      return const ServiceRequestSuccess();
+    } catch (error) {
+      return ServiceRequestFailure(error: error);
+    }
+  }
+
+  /// Returns whether a continued processing task is currently running.
+  static Future<bool> get isRunningContinuedProcessingTask =>
+      _platform.isRunningContinuedProcessingTask;
+
+  /// Returns whether the device supports GPU resources for background
+  /// continued processing tasks (iOS 26+).
+  ///
+  /// Requires the `com.apple.developer.background-tasks.continued-processing.gpu`
+  /// entitlement. On Android and unsupported iOS versions, returns false.
+  static Future<bool> get isGPUResourceSupported =>
+      _platform.isGPUResourceSupported;
+
+  /// Update the progress shown by the system for the running continued
+  /// processing task.
+  ///
+  /// This should be called from the background isolate while a
+  /// BGContinuedProcessingTask is running. The system may expire tasks that do
+  /// not report progress.
+  static void updateContinuedProcessingTaskProgress({
+    required int completed,
+    required int total,
+  }) {
+    _platform.updateContinuedProcessingTaskProgress(
+      completed: completed,
+      total: total,
+    );
+  }
+
+  /// Update the title and subtitle shown by the system for the running
+  /// continued processing task.
+  static void updateContinuedProcessingTaskTitle({
+    required String title,
+    required String subtitle,
+  }) {
+    _platform.updateContinuedProcessingTaskTitle(
+      title: title,
+      subtitle: subtitle,
+    );
+  }
+
+  /// Complete the running continued processing task.
+  ///
+  /// This should be called from the background isolate after the user-initiated
+  /// work finishes.
+  static void completeContinuedProcessingTask({bool success = true}) {
+    _platform.completeContinuedProcessingTask(success: success);
+  }
 }

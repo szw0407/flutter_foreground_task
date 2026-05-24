@@ -267,6 +267,27 @@ void main() {
         isMethodCall(ServiceApiMethod.isRunningService, arguments: null),
       );
     });
+
+    test('continuedProcessingTask', () async {
+      platformChannel.platform = platform;
+
+      expect(await FlutterForegroundTask.isContinuedProcessingTaskSupported,
+          false);
+      expect(await FlutterForegroundTask.isGPUResourceSupported, false);
+
+      final ServiceRequestResult startResult =
+          await _startContinuedProcessingTask(dummyData);
+      expect(startResult, isA<ServiceRequestSuccess>());
+      expect(await _isRunningContinuedProcessingTask, false);
+
+      final ServiceRequestResult stopResult =
+          await _stopContinuedProcessingTask();
+      expect(stopResult, isA<ServiceRequestFailure>());
+      expect(
+        (stopResult as ServiceRequestFailure).error,
+        isA<ServiceNotStartedException>(),
+      );
+    });
   });
 
   group('iOS', () {
@@ -499,6 +520,65 @@ void main() {
         isMethodCall(ServiceApiMethod.isRunningService, arguments: null),
       );
     });
+
+    test('continuedProcessingTask', () async {
+      platformChannel.platform = platform;
+
+      expect(
+          await FlutterForegroundTask.isContinuedProcessingTaskSupported, true);
+      expect(
+        methodCallHandler.log.last,
+        isMethodCall(
+          ServiceApiMethod.isContinuedProcessingTaskSupported,
+          arguments: null,
+        ),
+      );
+
+      expect(await FlutterForegroundTask.isGPUResourceSupported, false);
+      expect(
+        methodCallHandler.log.last,
+        isMethodCall(ServiceApiMethod.isGPUResourceSupported, arguments: null),
+      );
+
+      final ServiceRequestResult startResult =
+          await _startContinuedProcessingTask(dummyData);
+      expect(startResult, isA<ServiceRequestSuccess>());
+      expect(
+        methodCallHandler.log.last,
+        isMethodCall(
+          ServiceApiMethod.startContinuedProcessingTask,
+          arguments: dummyData.getStartContinuedProcessingTaskArgs(),
+        ),
+      );
+
+      expect(await _isRunningContinuedProcessingTask, true);
+      expect(
+        methodCallHandler.log.last,
+        isMethodCall(
+          ServiceApiMethod.isRunningContinuedProcessingTask,
+          arguments: null,
+        ),
+      );
+
+      final ServiceRequestResult startAgainResult =
+          await _startContinuedProcessingTask(dummyData);
+      expect(startAgainResult, isA<ServiceRequestFailure>());
+      expect(
+        (startAgainResult as ServiceRequestFailure).error,
+        isA<ServiceAlreadyStartedException>(),
+      );
+
+      final ServiceRequestResult stopResult =
+          await _stopContinuedProcessingTask();
+      expect(stopResult, isA<ServiceRequestSuccess>());
+      expect(
+        methodCallHandler.log.last,
+        isMethodCall(
+          ServiceApiMethod.stopContinuedProcessingTask,
+          arguments: null,
+        ),
+      );
+    });
   });
 }
 
@@ -544,6 +624,24 @@ Future<bool> get _isRunningService {
   return FlutterForegroundTask.isRunningService;
 }
 
+Future<ServiceRequestResult> _startContinuedProcessingTask(
+  ServiceDummyData dummyData,
+) {
+  return FlutterForegroundTask.startContinuedProcessingTask(
+    options: dummyData.continuedProcessingTaskOptions,
+    foregroundTaskOptions: dummyData.foregroundTaskOptions,
+    callback: testCallback,
+  );
+}
+
+Future<ServiceRequestResult> _stopContinuedProcessingTask() {
+  return FlutterForegroundTask.stopContinuedProcessingTask();
+}
+
+Future<bool> get _isRunningContinuedProcessingTask {
+  return FlutterForegroundTask.isRunningContinuedProcessingTask;
+}
+
 class ServiceApiMethod {
   static const String startService = 'startService';
   static const String restartService = 'restartService';
@@ -551,6 +649,15 @@ class ServiceApiMethod {
   static const String stopService = 'stopService';
   static const String isRunningService = 'isRunningService';
   static const String attachedActivity = 'attachedActivity';
+  static const String startContinuedProcessingTask =
+      'startContinuedProcessingTask';
+  static const String stopContinuedProcessingTask =
+      'stopContinuedProcessingTask';
+  static const String isRunningContinuedProcessingTask =
+      'isRunningContinuedProcessingTask';
+  static const String isContinuedProcessingTaskSupported =
+      'isContinuedProcessingTaskSupported';
+  static const String isGPUResourceSupported = 'isGPUResourceSupported';
 
   static Set<String> getImplementation(Platform platform) {
     if (platform.isAndroid) {
@@ -569,6 +676,11 @@ class ServiceApiMethod {
         updateService,
         stopService,
         isRunningService,
+        startContinuedProcessingTask,
+        stopContinuedProcessingTask,
+        isRunningContinuedProcessingTask,
+        isContinuedProcessingTaskSupported,
+        isGPUResourceSupported,
       };
     }
 
@@ -586,6 +698,8 @@ class ServiceApiMethodCallHandler {
   bool timeoutTest = false;
 
   bool _isRunningService = false;
+
+  bool _isRunningContinuedProcessingTask = false;
 
   // unimplemented: throw UnimplementedError
   void _checkImplementation(String method) {
@@ -626,6 +740,18 @@ class ServiceApiMethodCallHandler {
       return _isRunningService;
     } else if (method == ServiceApiMethod.attachedActivity) {
       return true;
+    } else if (method == ServiceApiMethod.startContinuedProcessingTask) {
+      _isRunningContinuedProcessingTask = true;
+      return Future.value();
+    } else if (method == ServiceApiMethod.stopContinuedProcessingTask) {
+      _isRunningContinuedProcessingTask = false;
+      return Future.value();
+    } else if (method == ServiceApiMethod.isRunningContinuedProcessingTask) {
+      return _isRunningContinuedProcessingTask;
+    } else if (method == ServiceApiMethod.isContinuedProcessingTaskSupported) {
+      return true;
+    } else if (method == ServiceApiMethod.isGPUResourceSupported) {
+      return false;
     }
 
     throw UnimplementedError();

@@ -5,6 +5,7 @@
 //  Created by WOO JIN HWANG on 2021/08/11.
 //
 
+import BackgroundTasks
 import Flutter
 import Foundation
 import UserNotifications
@@ -20,26 +21,31 @@ private let ACTION_NOTIFICATION_DISMISSED = "onNotificationDismissed"
 @available(iOS 10.0, *)
 class BackgroundService: NSObject {
   static let sharedInstance = BackgroundService()
-  
+
   private(set) var isRunningService: Bool = false
-  
+  private(set) var isRunningContinuedProcessing: Bool = false
+
   private var foregroundTask: ForegroundTask? = nil
+  private var continuedProcessingTask: ContinuedProcessingTask? = nil
   private var taskLifecycleListeners = ForegroundTaskLifecycleListeners()
-  
+
   func sendData(data: Any?) {
     if isRunningService {
       foregroundTask?.invokeMethod(ACTION_RECEIVE_DATA, arguments: data)
     }
+    if isRunningContinuedProcessing {
+      continuedProcessingTask?.invokeMethod(ACTION_RECEIVE_DATA, arguments: data)
+    }
   }
-  
+
   func addTaskLifecycleListener(_ listener: FlutterForegroundTaskLifecycleListener) {
     taskLifecycleListeners.addListener(listener)
   }
-  
+
   func removeTaskLifecycleListener(_ listener: FlutterForegroundTaskLifecycleListener) {
     taskLifecycleListeners.removeListener(listener)
   }
-  
+
   private let notificationCenter: UNUserNotificationCenter
   private let notificationPermissionManager: NotificationPermissionManager
   private var canReceiveNotificationResponse: Bool = false
@@ -51,7 +57,7 @@ class BackgroundService: NSObject {
   private var currForegroundTaskOptions: ForegroundTaskOptions
   private var prevForegroundTaskData: ForegroundTaskData?
   private var currForegroundTaskData: ForegroundTaskData
-  
+
   override init() {
     notificationCenter = UNUserNotificationCenter.current()
     notificationPermissionManager = NotificationPermissionManager()
@@ -62,7 +68,7 @@ class BackgroundService: NSObject {
     currForegroundTaskData = ForegroundTaskData.getData()
     super.init()
   }
-  
+
   func run() {
     backgroundServiceStatus = BackgroundServiceStatus.getData()
     notificationOptions = NotificationOptions.getData()
@@ -99,17 +105,17 @@ class BackgroundService: NSObject {
         break
     }
   }
-  
-  func userNotificationCenter(_ center: UNUserNotificationCenter, 
+
+  func userNotificationCenter(_ center: UNUserNotificationCenter,
                               _ response: UNNotificationResponse,
                               _ completionHandler: @escaping () -> Void) {
     // If it is not a notification requested by this plugin, the processing below is ignored.
     if response.notification.request.identifier != NOTIFICATION_ID { return }
-    
+
     // Prevents duplicate processing due to the `registrar.addApplicationDelegate`.
     if !canReceiveNotificationResponse { return }
     canReceiveNotificationResponse = false
-    
+
     let actionId = response.actionIdentifier
     if notificationContent.buttons.contains(where: { $0.id == actionId }) {
       foregroundTask?.invokeMethod(ACTION_NOTIFICATION_BUTTON_PRESSED, arguments: actionId)
@@ -118,53 +124,53 @@ class BackgroundService: NSObject {
     } else if actionId == UNNotificationDismissActionIdentifier {
       foregroundTask?.invokeMethod(ACTION_NOTIFICATION_DISMISSED, arguments: nil)
     }
-    
+
     completionHandler()
   }
-  
-  func userNotificationCenter(_ center: UNUserNotificationCenter, 
+
+  func userNotificationCenter(_ center: UNUserNotificationCenter,
                               _ notification: UNNotification,
                               _ completionHandler: @escaping (UNNotificationPresentationOptions) -> Void) {
     // If it is not a notification requested by this plugin, the processing below is ignored.
     if notification.request.identifier != NOTIFICATION_ID { return }
-    
+
     if notificationOptions.playSound {
       completionHandler([.alert, .sound])
     } else {
       completionHandler([.alert])
     }
-    
+
     // Prevents duplicate processing due to the `registrar.addApplicationDelegate`.
     canReceiveNotificationResponse = true
   }
-  
+
   private func setNotificationActions() {
     var actions: [UNNotificationAction] = []
     for button in notificationContent.buttons {
       let action = UNNotificationAction(identifier: button.id, title: button.text)
       actions.append(action)
     }
-    
+
     let category = UNNotificationCategory(
       identifier: NOTIFICATION_CATEGORY_ID,
       actions: actions,
       intentIdentifiers: [],
       options: .customDismissAction
     )
-    
+
     notificationCenter.setNotificationCategories([category])
   }
-  
+
   private func requestNotification() {
     if !notificationOptions.showNotification {
       return
     }
-    
+
     notificationPermissionManager.checkPermission { permission in
       if permission == NotificationPermission.DENIED {
         return
       }
-      
+
       let content = UNMutableNotificationContent()
       content.title = self.notificationContent.title
       content.body = self.notificationContent.text
@@ -173,20 +179,20 @@ class BackgroundService: NSObject {
         content.sound = .default
       }
       self.setNotificationActions()
-      
+
       let request = UNNotificationRequest(identifier: NOTIFICATION_ID, content: content, trigger: nil)
       self.notificationCenter.add(request, withCompletionHandler: nil)
     }
   }
-  
+
   private func removeAllNotification() {
     notificationCenter.removePendingNotificationRequests(withIdentifiers: [NOTIFICATION_ID])
     notificationCenter.removeDeliveredNotifications(withIdentifiers: [NOTIFICATION_ID])
   }
-  
+
   private func createForegroundTask() {
     destroyForegroundTask()
-    
+
     foregroundTask = ForegroundTask(
       serviceStatus: backgroundServiceStatus,
       taskData: currForegroundTaskData,
@@ -194,13 +200,58 @@ class BackgroundService: NSObject {
       taskLifecycleListener: taskLifecycleListeners
     )
   }
-  
+
   private func updateForegroundTask() {
     foregroundTask?.update(taskEventAction: currForegroundTaskOptions.eventAction)
   }
-  
+
   private func destroyForegroundTask() {
     foregroundTask?.destroy()
     foregroundTask = nil
+  }
+
+  // MARK: - BGContinuedProcessingTask Support (iOS 26+)
+
+  @available(iOS 13.0, *)
+  func startContinuedProcessingTask(bgTask: BGTask) {
+    // Restore saved args first since they may have been cleared by a service stop
+    let prefs = UserDefaults.standard
+    if let argsData = prefs.data(forKey: CONTINUED_PROCESSING_ARGS),
+       let args = try? JSONSerialization.jsonObject(with: argsData) as? [String: Any] {
+      ForegroundTaskData.setData(args: args)
+      ForegroundTaskOptions.setData(args: args)
+    }
+
+    guard ContinuedProcessingTaskOptions.getData() != nil else {
+      bgTask.setTaskCompleted(success: false)
+      return
+    }
+
+    backgroundServiceStatus = BackgroundServiceStatus.getData()
+    currForegroundTaskOptions = ForegroundTaskOptions.getData()
+    currForegroundTaskData = ForegroundTaskData.getData()
+
+    continuedProcessingTask = ContinuedProcessingTask(
+      serviceStatus: backgroundServiceStatus,
+      taskData: currForegroundTaskData,
+      taskEventAction: currForegroundTaskOptions.eventAction,
+      taskLifecycleListener: taskLifecycleListeners,
+      bgTask: bgTask,
+      onFinished: { [weak self] in
+        self?.continuedProcessingTask = nil
+        self?.isRunningContinuedProcessing = false
+        ContinuedProcessingTaskOptions.clearData()
+        UserDefaults.standard.removeObject(forKey: CONTINUED_PROCESSING_ARGS)
+      }
+    )
+
+    isRunningContinuedProcessing = true
+  }
+
+  @available(iOS 13.0, *)
+  func stopContinuedProcessingTask() {
+    continuedProcessingTask?.destroy()
+    continuedProcessingTask = nil
+    isRunningContinuedProcessing = false
   }
 }

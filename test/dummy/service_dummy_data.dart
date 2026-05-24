@@ -1,3 +1,5 @@
+import 'dart:ui';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_foreground_task/flutter_foreground_task.dart';
 import 'package:flutter_foreground_task/models/service_options.dart';
@@ -39,6 +41,12 @@ class ServiceDummyData {
 
   final int serviceId = 200;
 
+  final ContinuedProcessingTaskOptions continuedProcessingTaskOptions =
+      const ContinuedProcessingTaskOptions(
+    title: 'Processing',
+    subtitle: 'Task in progress',
+  );
+
   final String notificationTitle = 'title';
 
   final String notificationText = 'test';
@@ -78,5 +86,14 @@ class ServiceDummyData {
       notificationButtons: notificationButtons,
       callback: testCallback,
     ).toJson(platform);
+  }
+
+  Map<String, dynamic> getStartContinuedProcessingTaskArgs() {
+    return {
+      ...continuedProcessingTaskOptions.toJson(),
+      ...foregroundTaskOptions.toJson(),
+      'callbackHandle':
+          PluginUtilities.getCallbackHandle(testCallback)?.toRawHandle(),
+    };
   }
 }

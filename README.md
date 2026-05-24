@@ -110,12 +110,46 @@ Add the key below to `ios/Runner/info.plist` file so that the task can run in th
 <key>BGTaskSchedulerPermittedIdentifiers</key>
 <array>
     <string>com.pravera.flutter_foreground_task.refresh</string>
+    <!-- Required only when using BGContinuedProcessingTask on iOS 26+. -->
+    <string>$(PRODUCT_BUNDLE_IDENTIFIER).continuedProcessing.*</string>
 </array>
 <key>UIBackgroundModes</key>
 <array>
     <string>fetch</string>
+    <!-- Required only when using BGContinuedProcessingTask on iOS 26+. -->
+    <string>processing</string>
 </array>
 ```
+
+**BGContinuedProcessingTask (iOS 26+)**:
+
+On iOS 26+, user-initiated work can continue in the background with
+`BGContinuedProcessingTask`. Submit the task while the app is in the foreground,
+then call `setTaskHandler` from the callback just like Android foreground tasks.
+
+```dart
+@pragma('vm:entry-point')
+void continuedProcessingCallback() {
+  FlutterForegroundTask.setTaskHandler(MyTaskHandler());
+}
+
+Future<ServiceRequestResult> _startContinuedProcessingTask() {
+  return FlutterForegroundTask.startContinuedProcessingTask(
+    options: const ContinuedProcessingTaskOptions(
+      title: 'Processing Data',
+      subtitle: 'Task is running',
+    ),
+    foregroundTaskOptions: ForegroundTaskOptions(
+      eventAction: ForegroundTaskEventAction.repeat(5000),
+    ),
+    callback: continuedProcessingCallback,
+  );
+}
+```
+
+Call `FlutterForegroundTask.updateContinuedProcessingTaskProgress` from the
+task handler while work is running, and call
+`FlutterForegroundTask.completeContinuedProcessingTask` when the work is done.
 
 **Objective-C**:
 
